@@ -1,0 +1,26 @@
+[project]
+name = "ipscanner"
+version = "0.1.0"
+description = "Fast text-mode (Textual) IP range scanner with filtering, clipboard copy and CSV/JSON/HTML export."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "textual>=8.0",
+    "pyperclip>=1.8",
+]
+
+[project.scripts]
+ipscan = "ipscanner.app:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ipscanner"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

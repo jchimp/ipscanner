@@ -1,0 +1,76 @@
+Screen {
+    layout: vertical;
+}
+
+#range-bar, #filter-bar {
+    height: 3;
+    padding: 0 1;
+}
+
+#subnet {
+    width: 42;
+    min-width: 42;
+}
+
+#range {
+    width: 1fr;
+}
+
+#scan-btn {
+    width: 12;
+    min-width: 12;
+}
+
+#search {
+    width: 1fr;
+}
+
+#filter-bar Checkbox {
+    margin-left: 1;
+}
+
+#table {
+    height: 1fr;
+}
+
+#status {
+    height: 1;
+    padding: 0 1;
+    background: $surface;
+    color: $text-muted;
+}
+
+/* Modals */
+ConfirmScreen, ExportScreen {
+    align: center middle;
+}
+
+#dialog {
+    width: 70;
+    height: auto;
+    padding: 1 2;
+    border: thick $primary;
+    background: $surface;
+}
+
+#dialog Label {
+    margin-bottom: 1;
+}
+
+#dialog RadioSet {
+    width: 100%;
+    margin-bottom: 1;
+}
+
+#dialog Input {
+    margin-bottom: 1;
+}
+
+#buttons {
+    height: 3;
+    align-horizontal: right;
+}
+
+#buttons Button {
+    margin-left: 1;
+}
