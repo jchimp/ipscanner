@@ -28,14 +28,17 @@ from ipscanner.scanner import (
 LARGE_RANGE = 4096
 CUSTOM = "custom"
 
+# Fixed widths for bounded columns so they never shift as results arrive; None = auto.
 COLUMNS = (
-    ("ip", "IP"),
-    ("status", "Status"),
-    ("latency", "Latency"),
-    ("fqdn", "FQDN"),
-    ("mac", "MAC"),
-    ("vendor", "Vendor"),
+    ("ip", "IP", 15),
+    ("status", "Status", 7),
+    ("latency", "Latency", 8),
+    ("fqdn", "FQDN", None),
+    ("mac", "MAC", 17),
+    ("vendor", "Vendor", None),
 )
+COLUMN_KEYS = tuple(c[0] for c in COLUMNS)
+RELOAD_INTERVAL = 1.0  # min seconds between full table reloads while scanning
 
 STATUS_LABEL = {
     STATUS_ONLINE: "[green]online[/]",
@@ -49,6 +52,14 @@ def _latency_text(h: Host) -> str:
     if h.latency_ms is None:
         return ""
     return "<1 ms" if h.latency_ms < 1 else f"{h.latency_ms:.0f} ms"
+
+
+def _row_cells(h: Host) -> tuple[str, ...]:
+    """Cell values for one table row, in COLUMNS order."""
+    return (
+        str(h.ip), STATUS_LABEL.get(h.status, h.status), _latency_text(h),
+        h.fqdn or "", h.mac or "", h.vendor or "",
+    )
 
 
 def _sort_key(column: str):
@@ -173,6 +184,9 @@ class IPScannerApp(App[None]):
         self._sort_col = "ip"
         self._sort_reverse = False
         self._visible: list[Host] = []
+        self._table_keys: list[str] = []  # row keys currently in the table, in order
+        self._rendered: dict[str, tuple[str, ...]] = {}  # last cell values written per row
+        self._last_reload = 0.0
         self._settled = False  # True once mount-time widget events have settled.
 
     # ---------- layout ----------
@@ -201,8 +215,8 @@ class IPScannerApp(App[None]):
 
     def on_mount(self) -> None:
         table = self.query_one(DataTable)
-        for key, label in COLUMNS:
-            table.add_column(label, key=key)
+        for key, label, width in COLUMNS:
+            table.add_column(label, key=key, width=width)
         self.set_interval(0.25, self._tick)
 
         def settle() -> None:
@@ -329,23 +343,52 @@ class IPScannerApp(App[None]):
 
     def _rebuild(self) -> None:
         table = self.query_one(DataTable)
-        # Remember which host the cursor is on so it survives the rebuild.
-        current_key = self._cursor_key(table)
-
         self._visible = self._filtered()
+        keys = [str(h.ip) for h in self._visible]
+        if keys == self._table_keys:
+            # Same rows in the same order: patch cells in place, no clear/scroll reset.
+            self._patch_cells(table, self._visible)
+        elif self._scanning and time.monotonic() - self._last_reload < RELOAD_INTERVAL:
+            # Row set is changing every tick (volatile sort or offline hidden); rate-limit
+            # the full reload but keep the rows already shown up to date.
+            self._patch_cells(table, [h for h in self._visible if str(h.ip) in self._rendered])
+            self._dirty = True
+        else:
+            self._reload_rows(table, keys)
+        self._update_status()
+
+    def _patch_cells(self, table: DataTable, hosts: list[Host]) -> None:
+        for h in hosts:
+            key = str(h.ip)
+            cells = _row_cells(h)
+            old = self._rendered.get(key)
+            if cells == old:
+                continue
+            for i, (col, value) in enumerate(zip(COLUMN_KEYS, cells)):
+                if old is None or value != old[i]:
+                    # update_width lets the auto columns (FQDN, vendor) grow; they never shrink.
+                    table.update_cell(key, col, value, update_width=True)
+            self._rendered[key] = cells
+
+    def _reload_rows(self, table: DataTable, keys: list[str]) -> None:
+        # Remember the cursor host and scroll offset so they survive the rebuild.
+        current_key = self._cursor_key(table)
+        scroll_y = table.scroll_y
+
         table.clear()
+        self._rendered = {}
         new_index = None
         for i, h in enumerate(self._visible):
-            key = str(h.ip)
-            table.add_row(
-                key, STATUS_LABEL.get(h.status, h.status), _latency_text(h),
-                h.fqdn or "", h.mac or "", h.vendor or "", key=key,
-            )
-            if key == current_key:
+            cells = _row_cells(h)
+            table.add_row(*cells, key=cells[0])
+            self._rendered[cells[0]] = cells
+            if cells[0] == current_key:
                 new_index = i
+        self._table_keys = keys
+        self._last_reload = time.monotonic()
         if new_index is not None:
-            table.move_cursor(row=new_index, animate=False)
-        self._update_status()
+            table.move_cursor(row=new_index, animate=False, scroll=False)
+        table.scroll_to(y=scroll_y, animate=False, force=True)
 
     def _update_status(self) -> None:
         total = len(self._hosts)
